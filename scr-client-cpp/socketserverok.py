@@ -58,6 +58,7 @@ def randomizemapvalue():
 # --- Main Server Loop ---
 try:
     mapname = randomizemapvalue()
+    subprocess.Popen(["Launch.bat"], shell=True)
     while True:
         data, client_address = server_socket.recvfrom(1024)
         car_state = data.decode()
@@ -74,7 +75,7 @@ try:
                 mapname = randomizemapvalue()
                 # subprocess.run(["F:/Games/torcs/Launch.bat"], shell=True)
                 
-                subprocess.Popen(["F:/Games/torcs/Launch.bat"], shell=True)
+                subprocess.Popen(["Launch.bat"], shell=True)
             else:
                 reward =[1]
                 next_state={'a':1}
