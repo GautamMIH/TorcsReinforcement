@@ -99,11 +99,11 @@ private:
 	// Solves the gear changing subproblems
 	int setCarGear(CarState &cs);
 
-	// Solves the steering subproblems
-	float setCarSteer();
+	// // Solves the steering subproblems
+	// float setCarSteer();
 	
-	// Solves the gear changing subproblems
-	float setCarAccel();
+	// // Solves the gear changing subproblems
+	// float setCarAccel();
 
     float getTrackPos(CarState cs);
 
