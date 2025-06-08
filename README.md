@@ -1,2 +1,2 @@
 # TorcsReinforcement
-Rename sample.env tp .env and write your locations properly
+Rename sample.env to .env and write your locations properly
