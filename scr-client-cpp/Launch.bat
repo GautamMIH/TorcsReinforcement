@@ -1,5 +1,14 @@
-cd /d F:\Games\torcs
-start "" wtorcs.exe -r config\raceman\launchspring.xml
+@echo off
+setlocal enabledelayedexpansion
 
-cd /d F:\Games\torcs\scr-client-cpp
+REM === Load .env file ===
+for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+    set "%%A=%%B"
+)
+
+REM === Use the variables ===
+cd /d %TORCS_DIR%
+start "" wtorcs.exe -r %TORCS_CONFIG%
+
+cd /d %CLIENT_DIR%
 start "" client.exe
