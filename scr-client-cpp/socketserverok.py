@@ -3,7 +3,10 @@ import json
 import subprocess
 import xml.etree.ElementTree as ET
 import random
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 carsteer =0.0
 caraccel =1.0
@@ -11,7 +14,7 @@ caraccel =1.0
 csv_file = "data.csv"
 map_list = ['spring', 'wheel-2', 'alpine-1', 'e-track-2', 'g-track-3', 'corkscrew', 'alpine-2']
 
-
+configlocation = os.getenv('XML_PATH')
 
 
 # --- UDP Server Setup ---
@@ -38,7 +41,7 @@ def send_udp_message(carsteer: float, caraccel: float, host: str = '127.0.0.2', 
 def randomizemapvalue():
     map_name=random.choice(map_list)
         # === Step 2: Parse XML ===
-    tree = ET.parse('F:/Games/torcs/config/raceman/launchspring.xml')
+    tree = ET.parse(configlocation)
     root = tree.getroot()
 
     # === Step 3: Find the 'Tracks' section and change the map name ===
@@ -50,7 +53,7 @@ def randomizemapvalue():
                 break  # Assumes one "name" per track
 
     # === Step 4: Save XML ===
-    tree.write('F:/Games/torcs/config/raceman/launchspring.xml', encoding='UTF-8', xml_declaration=True)
+    tree.write(configlocation, encoding='UTF-8', xml_declaration=True)
     return map_name
 
 
@@ -59,6 +62,7 @@ def randomizemapvalue():
 try:
     mapname = randomizemapvalue()
     subprocess.Popen(["Launch.bat"], shell=True)
+    flag= False
     while True:
         data, client_address = server_socket.recvfrom(1024)
         car_state = data.decode()
@@ -68,30 +72,36 @@ try:
         car_state_dict = json.loads(car_state)
         damage = car_state_dict['damage']
         distraced = car_state_dict['distRaced']
+        distancefromstart = car_state_dict['distFromStart']
+        track = car_state_dict['track'][0]
         action=[0,1]
         if (distraced!=0):
-            if(damage>0):
-                subprocess.run(['taskkill', '/F', '/IM', 'client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                mapname = randomizemapvalue()
-                # subprocess.run(["F:/Games/torcs/Launch.bat"], shell=True)
+            if(distancefromstart>0 and distancefromstart<5):
+                flag=True
+            if(flag):
+                if(damage>0 or track==-1):
+                    subprocess.run(['taskkill', '/F', '/IM', 'client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    mapname = randomizemapvalue()
+                    # subprocess.run(["F:/Games/torcs/Launch.bat"], shell=True)
+                    flag= False
+                    
+                    subprocess.Popen(["Launch.bat"], shell=True)
+                else:
+                    reward =[1]
+                    next_state={'a':1}
+                    try:
+                        log_entry = {
+                            'car_state': car_state_dict,
+                            'action': action,
+                            'reward': reward,
+                            'next_state': next_state,
+                            'mapname':mapname
+                        }
+                        with open('car_data_log.jsonl', 'a') as f:
+                            f.write(json.dumps(log_entry) + '\n')  # One entry per line (JSONL format)
                 
-                subprocess.Popen(["Launch.bat"], shell=True)
-            else:
-                reward =[1]
-                next_state={'a':1}
-                try:
-                    log_entry = {
-                        'car_state': car_state_dict,
-                        'action': action,
-                        'reward': reward,
-                        'next_state': next_state,
-                        'mapname':mapname
-                    }
-                    with open('car_data_log.jsonl', 'a') as f:
-                        f.write(json.dumps(log_entry) + '\n')  # One entry per line (JSONL format)
-            
-                except Exception as e:
-                    print(e)
+                    except Exception as e:
+                        print(e)
 
         send_udp_message(action[0], action[1])
 finally:
