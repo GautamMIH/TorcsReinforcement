@@ -17,7 +17,9 @@
 
 
 import random
-import json
+import pandas as pd
+import gc
+
 
 def getaction(prev_accel=0.0, selected_bias=[20,20,20,20,20]):
     # Acceleration (same as before)
@@ -55,9 +57,34 @@ def getaction(prev_accel=0.0, selected_bias=[20,20,20,20,20]):
 #dist from start Each metre gives 1 reward
 #trackpos If on centre 0.2, more distance, less reward
 #angle If perfect angle 0.4, the more deviation, the less reward
-#distance raced - distance from start, each metre difference 0.5 negative
 #crash / oob -100
+def filter_run(chunk, run):
+    return chunk[chunk['run'] == run]
+
+def calculateReward(run, state, df):
+    discountfactor = 0.1
+    curr_state = df[(df['run'] == run) & (df['state'] == state)] #20
+    angle = curr_state['angle'].values[0]
+    trackpos = curr_state['trackpos'].values[0]
+    cs_track = curr_state['track1'].values[0]
+    cs_damage = curr_state['damage'].values[0]
+    cs_distfromstart = curr_state['distFromStart'].values[0]
+    for i in range(max(1,state-11), state): #9, 20
+        prev_mask = (df['run'] == run) & (df['state'] == i)
+        prev_state = df[prev_mask]
+        diff = state-i
+        reward = prev_state['reward'].values[0]
+        ps_distfromstart = prev_state['distFromStart'].values[0]
+        fw_progress = cs_distfromstart-ps_distfromstart
+        reward += fw_progress * (discountfactor**diff)
+        if(cs_track==-1 or cs_damage>0):
+            reward  -= 100*(discountfactor**diff)
+        reward += (0.2 - abs(trackpos)*0.2)*discountfactor**diff
+        reward += (0.4 - (abs(angle)*0.4)/1.57)*discountfactor**diff #pi/2 = 1.57 (RAD)
+        df.loc[prev_mask, 'reward'] = reward
 
 
-def calculatereward():
-    reward = 
+
+# del df         # Delete the DataFrame object
+# import gc
+# gc.collect()   # Force garbage collection

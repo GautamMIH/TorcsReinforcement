@@ -5,8 +5,8 @@ import xml.etree.ElementTree as ET
 import random
 from dotenv import load_dotenv
 import os
-from AIserver import getaction
-
+from AIserver import getaction, calculateReward
+import pandas as pd
 
 load_dotenv()
 carsteer =0.0
@@ -14,7 +14,9 @@ caraccel =1.0
 
 
 
-csv_file = "data.csv"
+
+
+#List of maps to random on each reinitialization
 map_list = ['spring', 'wheel-2', 'alpine-1', 'e-track-2', 'corkscrew']
 
 configlocation = os.getenv('XML_PATH')
@@ -79,6 +81,7 @@ def main(run):
     ]
     prev_accel=0.0
     selected_bias = random.choice(bias_list)
+    df = pd.DataFrame()
     try:
         mapname = randomizemapvalue()
         subprocess.Popen(["Launch.bat"], shell=True)
@@ -96,28 +99,43 @@ def main(run):
             distancefromstart = car_state_dict['distFromStart']
             track = car_state_dict['track'][0]
             acc, steer = getaction(prev_accel, selected_bias)
-            action=[steer, acc]
             if (distraced!=0):
                 if(distancefromstart>0 and distancefromstart<5):
                     flag=True
                 if(flag):
                     if(damage>0 or track==-1):
                         state +=1
-                        reward =[1]
-                        next_state={'a':1}
+                        reward =0.0
                         try:
-                            log_entry = {
-                                'run': run,
+                            temp_df = pd.DataFrame([{
+                                'run':run,
                                 'state':state,
-                                'car_state': car_state_dict,
-                                'action': action,
+                                'trackpos': car_state_dict['trackPos'],
+                                'angle': car_state_dict['angle'],
+                                'damage':damage,
+                                'distFromStart': distancefromstart,
+                                'distRaced':distraced,
+                                'focus':car_state_dict['focus'],
+                                'wheelSpinVelocity1':car_state_dict['wheelSpinVelocity'][0],
+                                'wheelSpinVelocity2':car_state_dict['wheelSpinVelocity'][1],
+                                'wheelSpinVelocity3':car_state_dict['wheelSpinVelocity'][2],
+                                'wheelSpinVelocity4':car_state_dict['wheelSpinVelocity'][3],
+                                'speedX':car_state_dict['wheelSpinVelocity'][4],
+                                'speedY':car_state_dict['wheelSpinVelocity'][5],
+                                'speedZ':car_state_dict['wheelSpinVelocity'][6],
+                                **{f'track{i+1}': val for i, val in enumerate(car_state_dict['track'])},
+                                'steer': steer,
+                                'accel': acc,
                                 'reward': reward,
-                                'next_state': next_state,
                                 'mapname':mapname
-                            }
-                            prev_accel = action[1]
-                            with open('car_data_log.jsonl', 'a') as f:
-                                f.write(json.dumps(log_entry) + '\n')  # One entry per line (JSONL format)
+                            }])
+                            prev_accel = acc
+  
+                            df=pd.concat([df, temp_df], ignore_index=True)
+                            calculateReward(run, state, df)
+                            filename = 'race_data.csv'
+                            write_header = not os.path.exists(filename)
+                            df.to_csv(filename, mode='a', header=write_header, index=False)
                         except Exception as e:
                             print(e)
                     
@@ -135,26 +153,37 @@ def main(run):
                         subprocess.Popen(["Launch.bat"], shell=True)
                     else:
                         state +=1
-                        reward =[1]
-                        next_state={'a':1}
+                        reward =0.0
                         try:
-                            log_entry = {
-                                'run': run,
+                            temp_df = pd.DataFrame([{
+                                'run':run,
                                 'state':state,
-                                'car_state': car_state_dict,
-                                'action': action,
+                                'trackpos': car_state_dict['trackPos'],
+                                'angle': car_state_dict['angle'],
+                                'damage':damage,
+                                'distFromStart': distancefromstart,
+                                'distRaced':distraced,
+                                'focus':car_state_dict['focus'],
+                                'wheelSpinVelocity1':car_state_dict['wheelSpinVelocity'][0],
+                                'wheelSpinVelocity2':car_state_dict['wheelSpinVelocity'][1],
+                                'wheelSpinVelocity3':car_state_dict['wheelSpinVelocity'][2],
+                                'wheelSpinVelocity4':car_state_dict['wheelSpinVelocity'][3],
+                                'speedX':car_state_dict['wheelSpinVelocity'][4],
+                                'speedY':car_state_dict['wheelSpinVelocity'][5],
+                                'speedZ':car_state_dict['wheelSpinVelocity'][6],
+                                **{f'track{i+1}': val for i, val in enumerate(car_state_dict['track'])},
+                                'steer': steer,
+                                'accel': acc,
                                 'reward': reward,
-                                'next_state': next_state,
                                 'mapname':mapname
-                            }
-                            prev_accel = action[1]
-                            with open('car_data_log.jsonl', 'a') as f:
-                                f.write(json.dumps(log_entry) + '\n')  # One entry per line (JSONL format)
-                    
+                            }])
+                            prev_accel = acc
+                            df=pd.concat([df, temp_df], ignore_index=True)
+                            calculateReward(run, state, df)
                         except Exception as e:
                             print(e)
 
-            send_udp_message(action[0], action[1])
+            send_udp_message(steer, acc)
     finally:
         server_socket.close()
         print("UDP server closed.")
