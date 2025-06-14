@@ -25,7 +25,7 @@ run_file = "run_counter.txt"
 
 # --- UDP Server Setup ---
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_address = ('127.0.0.1', 65432)
+server_address = ('0.0.0.0', 65432) #Previous: 127.0.0.1
 server_socket.bind(server_address)
 
 receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -36,8 +36,8 @@ receiver_address = ('127.0.0.2', 65433)
 
 print("UDP server is listening on", server_address)
 
-
-def send_udp_message(carsteer: float, caraccel: float, host: str = '127.0.0.2', port: int = 65433):
+#windows ip --Previous was 127.0.0.2
+def send_udp_message(carsteer: float, caraccel: float, host: str = '172.20.128.1', port: int = 65433):
     message = f"{carsteer},{caraccel}"
 
 
@@ -84,7 +84,8 @@ def main(run):
     df = pd.DataFrame()
     try:
         mapname = randomizemapvalue()
-        subprocess.Popen(["Launch.bat"], shell=True)
+        # subprocess.Popen(["Launch.bat"], shell=True)
+        subprocess.Popen(["cmd.exe", "/c", "Launch.bat"])
         flag= False
         state=0
         while True:
@@ -100,7 +101,7 @@ def main(run):
             track = car_state_dict['track'][0]
             acc, steer = getaction(prev_accel, selected_bias)
             if (distraced!=0):
-                if(distancefromstart>0 and distancefromstart<5):
+                if(distancefromstart>0 and distancefromstart<1):
                     flag=True
                 if(flag):
                     if(damage>0 or track==-1):
@@ -136,11 +137,16 @@ def main(run):
                             filename = 'race_data.csv'
                             write_header = not os.path.exists(filename)
                             df.to_csv(filename, mode='a', header=write_header, index=False)
+                            df=pd.DataFrame()
+                            if(run==500):
+                                print("Run limit reached. Exiting.")
+                                # subprocess.run(['taskkill', '/F', '/IM', 'client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                subprocess.run(['cmd.exe', '/c', 'taskkill /F /IM client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                exit(0)
                         except Exception as e:
                             print(e)
-                    
-
-                        subprocess.run(['taskkill', '/F', '/IM', 'client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        # subprocess.run(['taskkill', '/F', '/IM', 'client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        subprocess.run(['cmd.exe', '/c', 'taskkill /F /IM client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                         mapname = randomizemapvalue()
                         # subprocess.run(["F:/Games/torcs/Launch.bat"], shell=True)
                         flag= False
@@ -150,7 +156,8 @@ def main(run):
                         with open(run_file, "w") as f:
                             f.write(str(run))
                         prev_accel=0.0
-                        subprocess.Popen(["Launch.bat"], shell=True)
+                        # subprocess.Popen(["Launch.bat"], shell=True)
+                        subprocess.Popen(["cmd.exe", "/c", "Launch.bat"])
                     else:
                         state +=1
                         reward =0.0

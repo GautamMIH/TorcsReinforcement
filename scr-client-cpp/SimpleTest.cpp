@@ -50,7 +50,7 @@ std::string receiveAction() {
 
     fd_set readSet;
     timeval timeout;
-    timeout.tv_sec = 5;
+    timeout.tv_sec = 50000;
     timeout.tv_usec = 0;
 
     FD_ZERO(&readSet);
@@ -149,6 +149,10 @@ CarControl SimpleTest::wDrive(CarState cs) { /* ... (implementation as before, e
     float vel3 = getWheelSpinVelocity(cs, 2);
     float vel4 = getWheelSpinVelocity(cs, 3);
     std::array<float, 19> trackArray = getTrack(cs);
+    float speedx = cs.getSpeedX();
+    float speedy = cs.getSpeedY();
+    float speedz = cs.getSpeedZ();
+
 
     std::ostringstream oss;
     oss << "{";
@@ -158,7 +162,7 @@ CarControl SimpleTest::wDrive(CarState cs) { /* ... (implementation as before, e
     oss << "\"distFromStart\":" << dist_start << ",";
     oss << "\"distRaced\":" << dist_raced << ",";
     oss << "\"focus\":" << focus << ",";
-    oss << "\"wheelSpinVelocity\":[" << vel1 << "," << vel2 << "," << vel3 << "," << vel4 << "],";
+    oss << "\"wheelSpinVelocity\":[" << vel1 << "," << vel2 << "," << vel3 << "," << vel4 << ","<<speedx<<","<<speedy<<","<<speedz<< "],";
     oss << "\"track\":[";
     for (size_t i = 0; i < trackArray.size(); ++i) {
         oss << trackArray[i];
@@ -180,6 +184,7 @@ CarControl SimpleTest::wDrive(CarState cs) { /* ... (implementation as before, e
             try {
                 carsteer = std::stof(carsteer_str);
                 caraccel = std::stof(caraccel_str);
+                cout<<carsteer<<"\t"<<caraccel<<endl;
             } catch (const std::exception& e) { // Catch std::exception for broader coverage
                 std::cerr << "C++ Client: Exception in std::stof: " << e.what() << " for action string '" << action << "'" << std::endl;
             }
@@ -305,7 +310,8 @@ void SimpleTest::init(float *angles) {
     }
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(65432);
-    if (inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr) <= 0) {
+    // WSL IP --Previous: "127.0.0.1"
+    if (inet_pton(AF_INET, "172.20.132.142", &serverAddr.sin_addr) <= 0) {
         std::cerr << "C++ Client: inet_pton failed for serverAddr (127.0.0.1). Error: " << WSAGetLastError() << std::endl;
         closesocket(sock); sock = INVALID_SOCKET;
         if (wsaWasStarted) WSACleanup(); wsaWasStarted = false;
@@ -336,7 +342,7 @@ void SimpleTest::init(float *angles) {
     // std::cout << "C++ Client: Initialization complete. Ready to communicate." << std::endl;
 
     unsigned short clientPort = 65433; // Or any other port you are testing with
-    const char* clientListenIP = "127.0.0.2"; // Target IP for binding sock2
+    const char* clientListenIP = "0.0.0.0"; // Target IP for binding sock2 -- Previous: 127.0.0.2"
     clientListenAddr.sin_family = AF_INET;
     clientListenAddr.sin_port = htons(clientPort);
     // *** MODIFICATION: Bind to specific IP 127.0.0.2 ***
