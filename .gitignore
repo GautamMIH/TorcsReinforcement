@@ -1,3 +1,9 @@
+###FOLDERS###
+Normalizeddata/
+Racedata/
+Trainedmodels/
+
+
 ### C++ ###
 # Prerequisites
 *.d
