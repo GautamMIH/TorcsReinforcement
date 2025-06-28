@@ -1,68 +1,90 @@
-# import random
-# def getaction():
-#     ranges = [
-#         (0.2, 0.6),    # 50%
-#         (0.6, 0.8),    # 15%
-#         (0.8, 1.0),    # 5%
-#         (0.0, 0.2),    # 5%
-#         (-0.5, 0.0),   # 15%
-#         (-1.0, -0.5),  # 10%
-#     ]
-#     weights = [50, 15, 5, 5, 15, 10]  # Corresponding weights
-
-#     selected_range = random.choices(ranges, weights=weights, k=1)[0]
-#     accel = round(random.uniform(*selected_range), 2)
-#     steer= round(random.uniform(-1, 1), 1)
-#     return accel, steer
-
-
 import random
 import pandas as pd
 import gc
+# from tensorflow.keras.models import load_model
+# import tensorflow as tf
+# from tensorflow import function as tf_function
+from Normalize import normalize
+import numpy as np
+import time
+TF_ENABLE_ONEDNN_OPTS=0
+# model = load_model('Trainedmodels/100explore_v6.keras')
 
-
-def getaction(prev_accel=0.0, selected_bias=[20,20,20,20,20]):
+def getaction(prev_accel=0.0, selected_bias=[20,20,20,20,20], curr_state=None):
+    # epsilon = 0
+    # if random.random() < epsilon:
+    #     df = decode_json(curr_state)
+    #     #check if df is empty
+    #     if df.empty:
+    #         return 0.0, 0.0
+    #     accel, steer = optimal_action(df)
+    #     return accel, steer
+    
     # Acceleration (same as before)
     ranges = [
-        (0.2, 0.6), (0.6, 0.8), (0.8, 1.0),
-        (0.0, 0.2), (0.0, -0.5), (-0.5, -1.0),
+        -1.0, -0.5, 0, 0.5, 1.0
     ]
-    weights = [30, 30, 25, 10, 3, 2]
-    selected_range = random.choices(ranges, weights=weights, k=1)[0]
-    
-    ranges_steer = [
-        (-1.0, -0.5), (-0.5, -0.1), (-0.1, 0.1), (0.1, 0.5), (0.5, 1.0),
-    ]
+    acc_weights = [ 1, 4, 15, 40, 40]
+
+    accel = random.choices(ranges, weights=acc_weights, k=1)[0]
  
+    steer =random.choices(ranges, weights = selected_bias, k=1)[0]
+    accel = apply_momentum(prev_accel, accel, ranges, k=2)
 
-    bias_range =random.choices(ranges_steer, weights = selected_bias, k=1)[0]
-    steer = round(random.uniform(*bias_range), 2)
 
-    # Steering logic based on previous steer
-    accel_bias = prev_accel #0.5 0.65
+    # return accel, steer
+    return 1,0
 
-    # Decay factor: how much influence prev_steer has
-    bias_strength = 1 - min(abs(accel_bias), 1.0) #0.5 0.35
 
-    # Base distribution
-    accel = round(random.uniform(*selected_range), 2)
+def decode_json(car_state_dict):
+    # Convert the JSON string to a dictionary
+    curr_state = pd.DataFrame([{
+        'trackpos': car_state_dict['trackPos'],
+        'angle': car_state_dict['angle'],
+        'damage':car_state_dict['damage'],
+        'wheelSpinVelocity1':car_state_dict['wheelSpinVelocity'][0],
+        'wheelSpinVelocity2':car_state_dict['wheelSpinVelocity'][1],
+        'wheelSpinVelocity3':car_state_dict['wheelSpinVelocity'][2],
+        'wheelSpinVelocity4':car_state_dict['wheelSpinVelocity'][3],
+        'speedX':car_state_dict['wheelSpinVelocity'][4],
+        'speedY':car_state_dict['wheelSpinVelocity'][5],
+        'speedZ':car_state_dict['wheelSpinVelocity'][6],
+        **{f'track{i+1}': val for i, val in enumerate(car_state_dict['track'])},
+        'reward': 0.0,  # Initialize reward to 0
+        'reward4': 0.0,
+        'curr_reward': 0.0,
+        'curr_reward4': 0.0,
+    }])
+    return normalize(curr_state)
 
-    # Weighted blend: blend between random steer and previous direction
-    accel = round((accel * bias_strength + accel_bias * (1 - bias_strength)), 2) #0.8*0.5 + 0.5*0.5 #0.65
-    # Clamp to [-1.0, 1.0]
-    accel = max(-1.0, min(1.0, accel))
 
-    return accel, steer
+
+
+def apply_momentum(a_prev, a_raw, range, k=2):
+    idx_prev = range.index(a_prev)
+    idx_raw = range.index(a_raw)
+
+    if abs(idx_raw - idx_prev) <= k:
+        return a_raw
+    else:
+        # Clamp movement to k steps toward a_raw
+        if idx_raw > idx_prev:
+            return range[idx_prev + k]
+        else:
+            return range[idx_prev - k]
 
 #dist from start Each metre gives 1 reward
 #trackpos If on centre 0.2, more distance, less reward
 #angle If perfect angle 0.4, the more deviation, the less reward
 #crash / oob -100
+
 def filter_run(chunk, run):
     return chunk[chunk['run'] == run]
 
+
+
 def calculateReward(run, state, df):
-    discountfactor = 0.1
+    
     curr_state = df[(df['run'] == run) & (df['state'] == state)] #20
     angle = curr_state['angle'].values[0]
     trackpos = curr_state['trackpos'].values[0]
@@ -74,17 +96,79 @@ def calculateReward(run, state, df):
         prev_state = df[prev_mask]
         diff = state-i
         reward = prev_state['reward'].values[0]
+        reward4 = prev_state['reward4'].values[0]
         ps_distfromstart = prev_state['distFromStart'].values[0]
         fw_progress = cs_distfromstart-ps_distfromstart
-        reward += fw_progress * (discountfactor**diff)
+        reward += (fw_progress/diff)*2
+        reward4 = (fw_progress/diff)
+        reward += (0.2 - abs(trackpos)*0.2)/diff
+        reward4 += (0.5 - abs(trackpos)*0.5)/diff
+        reward += (0.4 - (abs(angle)*0.4)/1.57)/diff #pi/2 = 1.57 (RAD)
+        reward4 += (0.6 - (abs(angle)*0.6)/1.57)/diff
         if(cs_track==-1 or cs_damage>0):
-            reward  -= 100*(discountfactor**diff)
-        reward += (0.2 - abs(trackpos)*0.2)*discountfactor**diff
-        reward += (0.4 - (abs(angle)*0.4)/1.57)*discountfactor**diff #pi/2 = 1.57 (RAD)
+            reward  -= 20/diff
+            reward4 -= 10/diff
+        if(i == state-1):
+            curr_reward = fw_progress*2
+            curr_reward4 =fw_progress
+            curr_reward += (0.2 - abs(trackpos)*0.2)
+            curr_reward4 += (0.5 - abs(trackpos)*0.5)
+            curr_reward += (0.4 - (abs(angle)*0.4)/1.57) #pi/2 = 1.57 (RAD)
+            curr_reward4 += (0.6 - (abs(angle)*0.6)/1.57)
+            if(cs_track==-1 or cs_damage>0):
+                curr_reward -= 3
+                curr_reward4 -= 2
+            df.loc[prev_mask, 'curr_reward'] = curr_reward
+            df.loc[prev_mask, 'curr_reward4'] = curr_reward4
+            columns_to_copy = [
+                'trackpos','angle', 'speedX', 'speedY', 'speedZ'
+            ] + [f'track{i}' for i in range(1, 20)]
+
+            for col in columns_to_copy:
+                df.loc[prev_mask, f'next_{col}'] = curr_state[col].values[0]
+
+            
         df.loc[prev_mask, 'reward'] = reward
+        df.loc[prev_mask, 'reward4'] = reward4 
+        
 
 
 
-# del df         # Delete the DataFrame object
-# import gc
-# gc.collect()   # Force garbage collection
+def optimal_action(curr_state):
+    curr_state.drop(columns=['reward', 'reward4', 'curr_reward', 'curr_reward4'], inplace=True, errors='ignore')
+
+
+    base_state = curr_state.to_numpy().flatten()  # 1D vector
+
+    accel_list = [-1.0, -0.5, 0, 0.5, 1.0]
+    steer_list = [-1.0, -0.5, 0, 0.5, 1.0]
+
+    batch_states = np.zeros((25, len(base_state) + 2))  # 2 for steer, accel
+
+    idx = 0
+    for accel in accel_list:
+        for steer in steer_list:
+            batch_states[idx, :-2] = base_state
+            batch_states[idx, -2] = steer
+            batch_states[idx, -1] = accel
+            idx += 1
+
+    # predictions = model.predict(batch_states, batch_size=25, verbose=1)
+    start = time.time()
+    predictions = predict(batch_states)
+    end = time.time()
+    print(f"Prediction took {(end - start)*1000:.2f} ms")
+    best_index = np.argmax(predictions)
+
+    best_accel = batch_states[best_index, -1]
+    best_steer = batch_states[best_index, -2]
+    return best_accel, best_steer
+
+    
+    # return optimal_action[0], optimal_action[1]
+
+
+
+# @tf_function
+# def predict(batch_states):
+#     return model(batch_states, training=False)

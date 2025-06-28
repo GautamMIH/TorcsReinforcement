@@ -12,15 +12,12 @@ load_dotenv()
 carsteer =0.0
 caraccel =1.0
 
-
-
-
-
 #List of maps to random on each reinitialization
 map_list = ['spring', 'wheel-2', 'alpine-1', 'e-track-2', 'corkscrew']
 
 configlocation = os.getenv('XML_PATH')
 run_file = "run_counter.txt"
+windowsip = os.getenv('WINDOWS_IP')
 
 
 # --- UDP Server Setup ---
@@ -99,7 +96,7 @@ def main(run):
             distraced = car_state_dict['distRaced']
             distancefromstart = car_state_dict['distFromStart']
             track = car_state_dict['track'][0]
-            acc, steer = getaction(prev_accel, selected_bias)
+            acc, steer = getaction(prev_accel, selected_bias, car_state_dict)
             if (distraced!=0):
                 if(distancefromstart>0 and distancefromstart<1):
                     flag=True
@@ -107,6 +104,7 @@ def main(run):
                     if(damage>0 or track==-1):
                         state +=1
                         reward =0.0
+                        reward4 = 0.0
                         try:
                             temp_df = pd.DataFrame([{
                                 'run':run,
@@ -128,13 +126,16 @@ def main(run):
                                 'steer': steer,
                                 'accel': acc,
                                 'reward': reward,
+                                'reward4': reward4,
+                                'curr_reward': 0.0,
+                                'curr_reward4': 0.0,
                                 'mapname':mapname
                             }])
                             prev_accel = acc
   
                             df=pd.concat([df, temp_df], ignore_index=True)
                             calculateReward(run, state, df)
-                            filename = 'race_data.csv'
+                            filename = 'Racedata/race_data_4.csv'
                             write_header = not os.path.exists(filename)
                             df.to_csv(filename, mode='a', header=write_header, index=False)
                             df=pd.DataFrame()
@@ -161,6 +162,7 @@ def main(run):
                     else:
                         state +=1
                         reward =0.0
+                        reward4 = 0.0
                         try:
                             temp_df = pd.DataFrame([{
                                 'run':run,
@@ -182,6 +184,9 @@ def main(run):
                                 'steer': steer,
                                 'accel': acc,
                                 'reward': reward,
+                                'reward4': reward4,
+                                'curr_reward': 0.0,
+                                'curr_reward4': 0.0,
                                 'mapname':mapname
                             }])
                             prev_accel = acc
