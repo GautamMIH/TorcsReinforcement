@@ -1,39 +1,73 @@
 import random
 import pandas as pd
 import gc
-# from tensorflow.keras.models import load_model
-# import tensorflow as tf
-# from tensorflow import function as tf_function
-from Normalize import normalize
+
+from Normalize import prediction_normalize, decode_action
 import numpy as np
 import time
 TF_ENABLE_ONEDNN_OPTS=0
-# model = load_model('Trainedmodels/100explore_v6.keras')
+from tensorflow.keras.models import load_model
+import tensorflow as tf
+from tensorflow import function as tf_function
+model = load_model('Trainedmodels/100explore_v2_r4.keras')
 
-def getaction(prev_accel=0.0, selected_bias=[20,20,20,20,20], curr_state=None):
-    # epsilon = 0
-    # if random.random() < epsilon:
-    #     df = decode_json(curr_state)
-    #     #check if df is empty
-    #     if df.empty:
-    #         return 0.0, 0.0
-    #     accel, steer = optimal_action(df)
-    #     return accel, steer
+@tf_function
+def predict(batch_states):
+    return model(batch_states, training=False)
+
+def optimal_action(df):
+    state_cols = [
+    'trackpos', 'angle', 'speedX', 'speedY', 'speedZ'
+] + [f'track{i}' for i in range(1, 20)]
+    
+    input_state  = df[state_cols].values.astype(np.float32)
+    start = time.time()
+    predicted_actions = predict_actions(input_state)
+    end = time.time()
+    print(f"Prediction took {(end - start)*1000:.2f} ms")
+    print(predicted_actions)
+
+
+    decoded_actions = decode_action(predicted_actions[0])
+    print(f"Decoded Actions: {decoded_actions}")
+    accel = decoded_actions[1]
+    steer = decoded_actions[0]
+    print(f"Predicted Acceleration: {accel}, Steering: {steer}")
+    return accel, steer
+
+
+
+@tf_function
+def predict_actions(input_state):
+    q_values = model(input_state)
+    return tf.argmax(q_values, axis=1, output_type=tf.int32)
+
+def getaction(prev_accel=0.0, selected_bias_steer=[20,20,20,20,20], selected_bias_accel=[2, 3, 15, 40, 40], curr_state=None):
+    epsilon = 1
+    if random.random() < epsilon:
+        df = decode_json(curr_state)
+        #check if df is empty
+        if df.empty:
+            return 0.0, 0.0
+        accel, steer = optimal_action(df)
+        return accel, steer
     
     # Acceleration (same as before)
     ranges = [
         -1.0, -0.5, 0, 0.5, 1.0
     ]
-    acc_weights = [ 1, 4, 15, 40, 40]
 
-    accel = random.choices(ranges, weights=acc_weights, k=1)[0]
- 
-    steer =random.choices(ranges, weights = selected_bias, k=1)[0]
-    accel = apply_momentum(prev_accel, accel, ranges, k=2)
+    accel_ranges = [
+        -0.8, -0.3, 0, 0.5, 1.0
+    ]
+
+    accel = random.choices(accel_ranges, weights=selected_bias_accel, k=1)[0]
+    steer =random.choices(ranges, weights = selected_bias_steer, k=1)[0]
+    # accel = apply_momentum(prev_accel, accel, accel_ranges, k=2)
 
 
-    # return accel, steer
-    return 1,0
+    return accel, steer
+
 
 
 def decode_json(car_state_dict):
@@ -41,11 +75,7 @@ def decode_json(car_state_dict):
     curr_state = pd.DataFrame([{
         'trackpos': car_state_dict['trackPos'],
         'angle': car_state_dict['angle'],
-        'damage':car_state_dict['damage'],
-        'wheelSpinVelocity1':car_state_dict['wheelSpinVelocity'][0],
-        'wheelSpinVelocity2':car_state_dict['wheelSpinVelocity'][1],
-        'wheelSpinVelocity3':car_state_dict['wheelSpinVelocity'][2],
-        'wheelSpinVelocity4':car_state_dict['wheelSpinVelocity'][3],
+
         'speedX':car_state_dict['wheelSpinVelocity'][4],
         'speedY':car_state_dict['wheelSpinVelocity'][5],
         'speedZ':car_state_dict['wheelSpinVelocity'][6],
@@ -55,7 +85,7 @@ def decode_json(car_state_dict):
         'curr_reward': 0.0,
         'curr_reward4': 0.0,
     }])
-    return normalize(curr_state)
+    return prediction_normalize(curr_state)
 
 
 
@@ -99,29 +129,49 @@ def calculateReward(run, state, df):
         reward4 = prev_state['reward4'].values[0]
         ps_distfromstart = prev_state['distFromStart'].values[0]
         fw_progress = cs_distfromstart-ps_distfromstart
-        reward += (fw_progress/diff)*2
-        reward4 = (fw_progress/diff)
-        reward += (0.2 - abs(trackpos)*0.2)/diff
-        reward4 += (0.5 - abs(trackpos)*0.5)/diff
-        reward += (0.4 - (abs(angle)*0.4)/1.57)/diff #pi/2 = 1.57 (RAD)
-        reward4 += (0.6 - (abs(angle)*0.6)/1.57)/diff
+        if(fw_progress < 0.2):
+            reward -= 0.2/diff
+            reward4 -= 0.1/diff
+        speed_reward = min(curr_state['speedX'].values[0] / 200.0, 1)
+        reward += (fw_progress/diff)*5
+        reward+= speed_reward/diff
+        reward4 = (fw_progress/diff) *3
+        reward4 += speed_reward/diff
+        if curr_state['speedX'].values[0]>10:
+            reward += (0.2 - abs(trackpos)*0.2)/diff
+            reward4 += (0.5 - abs(trackpos)*0.5)/diff
+            reward += (0.4 - (abs(angle)*0.4)/1.57)/diff #pi/2 = 1.57 (RAD)
+            reward4 += (0.6 - (abs(angle)*0.6)/1.57)/diff
+        else:
+            reward -= 0.1/diff
+            reward4 -= 0.1/diff
         if(cs_track==-1 or cs_damage>0):
             reward  -= 20/diff
             reward4 -= 10/diff
         if(i == state-1):
-            curr_reward = fw_progress*2
-            curr_reward4 =fw_progress
-            curr_reward += (0.2 - abs(trackpos)*0.2)
-            curr_reward4 += (0.5 - abs(trackpos)*0.5)
-            curr_reward += (0.4 - (abs(angle)*0.4)/1.57) #pi/2 = 1.57 (RAD)
-            curr_reward4 += (0.6 - (abs(angle)*0.6)/1.57)
+            curr_reward = fw_progress*5
+            curr_reward += speed_reward
+            curr_reward4 =fw_progress *5
+            curr_reward4 += speed_reward
+            if(fw_progress < 0.2):
+                curr_reward -= 0.2/diff
+                curr_reward4 -= 0.1/diff
+            if curr_state['speedX'].values[0]>10:
+                curr_reward += (0.2 - abs(trackpos)*0.2)
+                curr_reward4 += (0.2 - abs(trackpos)*0.2)
+                curr_reward += (0.4 - (abs(angle)*0.4)/1.57) #pi/2 = 1.57 (RAD)
+                curr_reward4 += (0.4 - (abs(angle)*0.4)/1.57)
+            if(curr_state['speedX'].values[0]<10):
+                curr_reward -= 0.1
+                curr_reward4 -= 0.1
+
             if(cs_track==-1 or cs_damage>0):
                 curr_reward -= 3
                 curr_reward4 -= 2
             df.loc[prev_mask, 'curr_reward'] = curr_reward
             df.loc[prev_mask, 'curr_reward4'] = curr_reward4
             columns_to_copy = [
-                'trackpos','angle', 'speedX', 'speedY', 'speedZ'
+                'trackpos','angle', 'speedX', 'speedY', 'speedZ', 'damage'
             ] + [f'track{i}' for i in range(1, 20)]
 
             for col in columns_to_copy:
@@ -135,23 +185,18 @@ def calculateReward(run, state, df):
 
 
 def optimal_action(curr_state):
-    curr_state.drop(columns=['reward', 'reward4', 'curr_reward', 'curr_reward4'], inplace=True, errors='ignore')
-
+    curr_state.drop(columns = ['reward', 'reward4', 'curr_reward', 'curr_reward4'], inplace=True, errors='ignore')
 
     base_state = curr_state.to_numpy().flatten()  # 1D vector
+    features_len = len(base_state)
+    batch_states = np.zeros((25, len(base_state) + 25))  # 2 for steer, accel
 
-    accel_list = [-1.0, -0.5, 0, 0.5, 1.0]
-    steer_list = [-1.0, -0.5, 0, 0.5, 1.0]
+    for i in range(25):
+        batch_states[i, :features_len] = base_state
+        batch_states[i, features_len:] = tf.one_hot(i, depth=25).numpy()  # One-hot encoding for action index
 
-    batch_states = np.zeros((25, len(base_state) + 2))  # 2 for steer, accel
 
-    idx = 0
-    for accel in accel_list:
-        for steer in steer_list:
-            batch_states[idx, :-2] = base_state
-            batch_states[idx, -2] = steer
-            batch_states[idx, -1] = accel
-            idx += 1
+
 
     # predictions = model.predict(batch_states, batch_size=25, verbose=1)
     start = time.time()
@@ -159,9 +204,12 @@ def optimal_action(curr_state):
     end = time.time()
     print(f"Prediction took {(end - start)*1000:.2f} ms")
     best_index = np.argmax(predictions)
+    optimal_action = decode_action(best_index)
 
-    best_accel = batch_states[best_index, -1]
-    best_steer = batch_states[best_index, -2]
+
+    best_accel = optimal_action[1]
+    best_steer = optimal_action[0]
+    print(f"Best Acceleration: {best_accel}, Best Steering: {best_steer}")
     return best_accel, best_steer
 
     
@@ -169,6 +217,3 @@ def optimal_action(curr_state):
 
 
 
-# @tf_function
-# def predict(batch_states):
-#     return model(batch_states, training=False)

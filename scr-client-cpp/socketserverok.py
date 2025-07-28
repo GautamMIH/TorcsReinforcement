@@ -5,7 +5,9 @@ import xml.etree.ElementTree as ET
 import random
 from dotenv import load_dotenv
 import os
+import time
 from AIserver import getaction, calculateReward
+from Normalize import main as normalize_main
 import pandas as pd
 
 load_dotenv()
@@ -63,7 +65,8 @@ def randomizemapvalue():
 # {"trackPos":-1.60665,"angle":1.45219,"damage":8049,"distFromStart":1483.79,"distRaced":1487.79,"focus":0,"wheelSpinVelocity":[0.237796,1.19102,24.4455,24.4455],"track":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]}
 # --- Main Server Loop ---
 def main(run):
-    bias_list = [
+    start_time = time.time()
+    steer_bias_list = [
         [30, 30, 15, 15, 10],
         [10, 15, 15, 30, 30],
         [35, 35, 15, 10, 5],
@@ -76,8 +79,18 @@ def main(run):
         [20, 20, 40, 10, 10],
         [10, 10, 40, 20, 20],
     ]
+    accel_bias_list = [
+        [2, 3, 20, 50, 25],
+        [2, 3, 20, 25, 50],
+        [5, 10, 15, 30, 40],
+        [10, 15, 15, 20, 40],
+        [15, 10, 15, 20, 40],
+        [15, 15, 5, 30, 35],
+    ]
+    weights = [0.25, 0.25, 0.20, 0.10, 0.10, 0.10]
     prev_accel=0.0
-    selected_bias = random.choice(bias_list)
+    selected_bias_steer = random.choice(steer_bias_list)
+    selected_bias_accel = random.choices(accel_bias_list)[0]
     df = pd.DataFrame()
     try:
         mapname = randomizemapvalue()
@@ -96,12 +109,12 @@ def main(run):
             distraced = car_state_dict['distRaced']
             distancefromstart = car_state_dict['distFromStart']
             track = car_state_dict['track'][0]
-            acc, steer = getaction(prev_accel, selected_bias, car_state_dict)
+            acc, steer = getaction(prev_accel, selected_bias_steer, selected_bias_accel, car_state_dict)
             if (distraced!=0):
                 if(distancefromstart>0 and distancefromstart<1):
                     flag=True
                 if(flag):
-                    if(damage>0 or track==-1):
+                    if(damage>0 or track==-1 or state >=200):
                         state +=1
                         reward =0.0
                         reward4 = 0.0
@@ -135,7 +148,10 @@ def main(run):
   
                             df=pd.concat([df, temp_df], ignore_index=True)
                             calculateReward(run, state, df)
-                            filename = 'Racedata/race_data_4.csv'
+                            end_time = time.time()
+                            elapsed_time = end_time - start_time
+                            print(f"Elapsed time: {elapsed_time:.2f} seconds")
+                            filename = 'Racedata/race_data_6.csv'
                             write_header = not os.path.exists(filename)
                             df.to_csv(filename, mode='a', header=write_header, index=False)
                             df=pd.DataFrame()
@@ -143,6 +159,7 @@ def main(run):
                                 print("Run limit reached. Exiting.")
                                 # subprocess.run(['taskkill', '/F', '/IM', 'client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                                 subprocess.run(['cmd.exe', '/c', 'taskkill /F /IM client.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                normalize_main()
                                 exit(0)
                         except Exception as e:
                             print(e)
@@ -153,7 +170,9 @@ def main(run):
                         flag= False
                         state=0
                         run +=1
-                        selected_bias = random.choice(bias_list)
+                        selected_bias_steer = random.choice(steer_bias_list)
+                        selected_bias_accel = random.choices(accel_bias_list)[0]
+
                         with open(run_file, "w") as f:
                             f.write(str(run))
                         prev_accel=0.0
