@@ -2,7 +2,7 @@
 
 > **A Reinforcement Learning agent capable of mastering high-speed racing circuits via Q-Value approximation and custom reward shaping.**
 
-![Convergence Graph](assets/image_295dbd.png)
+![Convergence Graph](assets/torcs_loss.png)
 *Figure 1: Convergence Analysis. Validation loss minimization over 80 epochs. The rapid decay demonstrates the MLP's ability to approximate long-term rewards from immediate sensor states.*
 
 ---
